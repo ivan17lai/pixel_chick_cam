@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 
@@ -16,8 +17,8 @@ const List<String> aspectRatiosText = ["4:3","5:4"];
 int aspectRatios_index = 0;
 String customFolderPath = "/storage/emulated/0/DCIM/PixelChickCam";
 
-Uint8List? _previewImageBytes; // 暫存拍照後的影像
-bool _showPreview = false;     // 是否顯示預覽頁面
+Uint8List? _previewImageBytes;
+bool _showPreview = false;
 String filePath = "";
 String savePath = "";
 String fileName = "img";
@@ -66,10 +67,26 @@ class _HomePageState extends State<HomePage> {
 
   void initState() {
     super.initState();
-    _initCamera();
+    _initializeApp(); // 用 async function 包起來
+  }
+  Future<void> _initializeApp() async {
+    await _loadSavedFolderPath(); // 等待記憶載入完
+    await _initCamera();          // 再啟動相機
+    if (mounted) setState(() {}); // 重新繪製畫面
   }
 
+  // ✅ 載入記憶的資料夾路徑
+  Future<void> _loadSavedFolderPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedPath = prefs.getString('customFolderPath');
+    if (savedPath != null && savedPath.isNotEmpty) {
+      setState(() {
+        customFolderPath = savedPath;
+      });
+    }
+  }
 
+  // ✅ 選擇資料夾 + 記憶
   Future<void> _pickFolder() async {
     String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
 
@@ -77,6 +94,11 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         customFolderPath = selectedDirectory;
       });
+
+      // ✅ 儲存至 SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('customFolderPath', selectedDirectory);
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('📂 已選擇資料夾：$selectedDirectory')),
       );
@@ -84,6 +106,8 @@ class _HomePageState extends State<HomePage> {
       debugPrint("❌ 使用者未選擇資料夾");
     }
   }
+
+
 
   Future<void> _initCamera() async {
     if (cameras.isEmpty) return;
@@ -189,6 +213,26 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _showNotReadyDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.black87,
+          title: const Text('提示', style: TextStyle(color: Colors.white)),
+          content: const Text('這個還沒用，不要點 🙈', style: TextStyle(color: Colors.white70)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('知道了', style: TextStyle(color: Colors.lightBlue)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
   Widget _buildPreviewScreen(double screenWidth, double screenHeight) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
@@ -286,41 +330,72 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: setColorScheme.background,
         centerTitle: true,
         title: Center(
-          child: InkWell(
-            onTap: _pickFolder,
-            child: Container(
-              width: 160,
-              height: 35,
-              padding: EdgeInsets.all(5),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                color: Colors.white24,
-              ),
-              child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min, // ✅ 讓內容緊貼，不撐開整個 Row
-                    children: [
-                      Text(
-                        (customFolderPath.length > 10)
-                            ? '...${customFolderPath.substring(customFolderPath.length - 10)}'
-                            : customFolderPath,
-                        style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.white54,
-                            fontWeight: FontWeight.w600
-                        ),
-                      ),
-                      const SizedBox(width: 2), // ✅ 調整距離，原本可放 8~10，這裡縮小成 2
-                      const Icon(
-                        Icons.file_upload_outlined,
-                        color: Colors.white54,
-                        size: 20,
-                      ),
-                    ],
-                  )
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
 
+            children: [
+              InkWell(
+                onTap: _pickFolder,
+                child: Container(
+                  width: 160,
+                  height: 35,
+                  padding: EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.white24,
+                  ),
+                  child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.folder_open_outlined,
+                            color: Colors.white54,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            (customFolderPath.length > 10)
+                                ? '...${customFolderPath.substring(customFolderPath.length - 10)}'
+                                : customFolderPath,
+                            style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.white54,
+                                fontWeight: FontWeight.w600
+                            ),
+                          ),
+                        ],
+                      )
+
+                  ),
+                ),
               ),
-            ),
+              SizedBox(
+                width: padding,
+              ),
+              InkWell(
+                onTap: (){
+                  _showNotReadyDialog();
+                },
+                child: Container(
+                  width: 35,
+                  height: 35,
+                  padding: EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.white24,
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.settings,
+                      color: Colors.white54,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -445,7 +520,7 @@ class CameraContainer extends StatelessWidget {
     }
 
     final previewSize = controller.value.previewSize!;
-    final previewAspectRatio = previewSize.height / previewSize.width; // 注意：CameraPreview 是反的
+    final previewAspectRatio = previewSize.height / previewSize.width;
 
     final targetAspect = aspectRatios[aspectRatios_index];
     final targetHeight = screenWidth * 1 / targetAspect;
@@ -458,7 +533,7 @@ class CameraContainer extends StatelessWidget {
         borderRadius: BorderRadius.circular(25),
       ),
       child: FittedBox(
-        fit: BoxFit.cover, // ✅ 保持比例裁切
+        fit: BoxFit.cover,
         child: SizedBox(
           width: previewSize.height,
           height: previewSize.width,
@@ -490,6 +565,11 @@ class _RenameBoxState extends State<RenameBox>
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
+  // 三個輸入欄位控制器
+  final TextEditingController _classController = TextEditingController();
+  final TextEditingController _numberController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -511,30 +591,71 @@ class _RenameBoxState extends State<RenameBox>
   @override
   void dispose() {
     _controller.dispose();
+    _classController.dispose();
+    _numberController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
   Future<void> _renameFileDialog() async {
-    TextEditingController textController = TextEditingController(text: fileName);
     await showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: Colors.black87,
-          title: const Text('檔案名稱', style: TextStyle(color: Colors.white)),
-          content: TextField(
-            controller: textController,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              hintText: '輸入新檔名（不含副檔名）',
-              hintStyle: TextStyle(color: Colors.white38),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Colors.white30),
+          title: const Text('設定檔案名稱', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _classController,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: '班級',
+                  labelStyle: TextStyle(color: Colors.white54),
+                  hintStyle: TextStyle(color: Colors.white38),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white30),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white),
+                  ),
+                ),
               ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Colors.white),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _numberController,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: '座號',
+                  labelStyle: TextStyle(color: Colors.white54),
+                  hintStyle: TextStyle(color: Colors.white38),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white30),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _nameController,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: '姓名',
+                  labelStyle: TextStyle(color: Colors.white54),
+                  hintStyle: TextStyle(color: Colors.white38),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white30),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -543,12 +664,20 @@ class _RenameBoxState extends State<RenameBox>
             ),
             TextButton(
               onPressed: () {
-                final newName = textController.text.trim();
-                if (newName.isNotEmpty) {
+                final c = _classController.text.trim();
+                final n = _numberController.text.trim();
+                final name = _nameController.text.trim();
+
+                if (c.isNotEmpty && n.isNotEmpty && name.isNotEmpty) {
+                  final newName = "${c}_${n}_$name";
                   setState(() {
                     fileName = newName;
                   });
-                  widget.onNameChanged(newName); // ✅ 通知父層更新 fileName
+                  widget.onNameChanged(newName);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('⚠️ 請填寫完整三個欄位')),
+                  );
                 }
                 Navigator.pop(ctx);
               },
