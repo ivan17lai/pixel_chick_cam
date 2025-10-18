@@ -668,17 +668,25 @@ class _RenameBoxState extends State<RenameBox>
                 final n = _numberController.text.trim();
                 final name = _nameController.text.trim();
 
-                if (c.isNotEmpty && n.isNotEmpty && name.isNotEmpty) {
-                  final newName = "${c}_${n}_$name";
-                  setState(() {
-                    fileName = newName;
-                  });
-                  widget.onNameChanged(newName);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('⚠️ 請填寫完整三個欄位')),
-                  );
-                }
+
+                // if (c.isNotEmpty && n.isNotEmpty && name.isNotEmpty) {
+                //   final newName = "${c}_${n}_$name";
+                //   setState(() {
+                //     fileName = newName;
+                //   });
+                //   widget.onNameChanged(newName);
+                // } else {
+                //   ScaffoldMessenger.of(context).showSnackBar(
+                //     const SnackBar(content: Text('⚠️ 請填寫完整三個欄位')),
+                //   );
+                // }
+
+                final newName = "${c}_${n}_$name";
+                setState(() {
+                  fileName = newName;
+                });
+                widget.onNameChanged(newName);
+
                 Navigator.pop(ctx);
               },
               child: const Text('確定', style: TextStyle(color: Colors.lightBlue)),
