@@ -7,15 +7,17 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
-
-
 const padding = 20.0;
 
-const List<double> aspectRatios = [3/4, 4/5];
-const List<String> aspectRatiosText = ["4:3","5:4"];
+// 1. 修改全域變數：新增自訂比例的預設值
+// 預設比例：4:3, 5:4, 1:1 (自訂預設)
+List<double> aspectRatios = [3/4, 4/5, 1.0];
+List<String> aspectRatiosText = ["4:3","5:4", "1:1"];
 int aspectRatios_index = 0;
 String customFolderPath = "/storage/emulated/0/DCIM/PixelChickCam";
+// 新增一個全域變數來儲存自訂比例的字串，用於顯示和載入
+String customRatioString = "1:1";
+
 
 Uint8List? _previewImageBytes;
 bool _showPreview = false;
@@ -60,17 +62,20 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _counter = 0;
 
   late CameraController _cameraController;
   bool _isCameraInitialized = false;
 
+  @override
   void initState() {
     super.initState();
     _initializeApp(); // 用 async function 包起來
   }
+
+  // 1.1. 修改 _initializeApp() 以載入自訂比例
   Future<void> _initializeApp() async {
     await _loadSavedFolderPath(); // 等待記憶載入完
+    await _loadCustomRatio();     // 載入自訂比例
     await _initCamera();          // 再啟動相機
     if (mounted) setState(() {}); // 重新繪製畫面
   }
@@ -85,6 +90,31 @@ class _HomePageState extends State<HomePage> {
       });
     }
   }
+
+  // 2. 新增：載入自訂比例的函式
+  Future<void> _loadCustomRatio() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedRatioString = prefs.getString('customRatio'); // e.g. "16:9"
+
+    if (savedRatioString != null && savedRatioString.isNotEmpty) {
+      customRatioString = savedRatioString;
+
+      final parts = customRatioString.split(':');
+      if (parts.length == 2) {
+        final w = double.tryParse(parts[0]);
+        final h = double.tryParse(parts[1]);
+        if (w != null && h != null && w > 0 && h > 0) {
+          final newRatio = h / w; // Flutter 的比例是 height / width
+
+          // 替換全域變數中的自訂比例 (第三個)
+          aspectRatios[2] = newRatio;
+          aspectRatiosText[2] = customRatioString;
+        }
+      }
+      if (mounted) setState(() {});
+    }
+  }
+
 
   // ✅ 選擇資料夾 + 記憶
   Future<void> _pickFolder() async {
@@ -213,23 +243,40 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _showNotReadyDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: Colors.black87,
-          title: const Text('提示', style: TextStyle(color: Colors.white)),
-          content: const Text('這個還沒用，不要點 🙈', style: TextStyle(color: Colors.white70)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('知道了', style: TextStyle(color: Colors.lightBlue)),
-            ),
-          ],
-        );
-      },
+  // 3. 移除 _showNotReadyDialog 並改為導航到設定頁面
+  void _openSettings() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SettingsPage(currentRatio: customRatioString),
+      ),
     );
+
+    // 接收來自設定頁面的結果
+    if (result != null && result is String) {
+      await _saveAndApplyCustomRatio(result);
+    }
+  }
+
+  // 4. 新增：儲存並應用自訂比例的函式
+  Future<void> _saveAndApplyCustomRatio(String ratioString) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('customRatio', ratioString);
+
+    // 重新載入比例並更新畫面
+    await _loadCustomRatio();
+    if (mounted) {
+      setState(() {
+        // 確保如果當前選中是自訂比例，介面能正確更新
+        if (aspectRatios_index == aspectRatios.length - 1) {
+          // 如果當前是自訂比例，則強制重建 CameraContainer
+          _cameraController.value.aspectRatio; // 觸發 State 改變
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ 已儲存新的自訂比例：$ratioString')),
+      );
+    }
   }
 
 
@@ -242,6 +289,7 @@ class _HomePageState extends State<HomePage> {
         SizedBox(height: padding / 2),
         Container(
           width: screenWidth * 0.9,
+          // ⚠️ 注意：此處要用 aspectRatios[aspectRatios_index]，因為它可能不是 4/3
           height: screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index],
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(25),
@@ -254,7 +302,8 @@ class _HomePageState extends State<HomePage> {
         ),
         SizedBox(
           height: (screenHeight -
-              (screenWidth * 0.9 * 4 / 3) -
+              // ⚠️ 注意：這裡的減法也必須使用當前的比例
+              (screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index]) -
               AppBar().preferredSize.height) /
               8,
         ),
@@ -292,10 +341,14 @@ class _HomePageState extends State<HomePage> {
             IconButton(
               onPressed: () async {
                 if (_previewImageBytes == null) return;
-                final filePath = await _saveImage(_previewImageBytes!);
-                if (filePath != null && mounted) {
+                // ⚠️ 注意：這裡的 fileName 應使用全域變數 fileName
+                final savePath = customFolderPath ?? "/storage/emulated/0/DCIM/PixelChickCam";
+                filePath = "$savePath/$fileName.png";
+
+                final resultPath = await _saveImage(_previewImageBytes!);
+                if (resultPath != null && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('✅ 已儲存裁切圖片：$filePath')),
+                    SnackBar(content: Text('✅ 已儲存裁切圖片：$resultPath')),
                   );
                   setState(() {
                     _showPreview = false;
@@ -375,9 +428,8 @@ class _HomePageState extends State<HomePage> {
                 width: padding,
               ),
               InkWell(
-                onTap: (){
-                  _showNotReadyDialog();
-                },
+                // 5. 修改：設定按鈕導航到設定頁面
+                onTap: _openSettings,
                 child: Container(
                   width: 35,
                   height: 35,
@@ -411,6 +463,7 @@ class _HomePageState extends State<HomePage> {
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               width: screenWidth * 0.9,
+              // ⚠️ 注意：這裡的 height 必須使用當前選中的比例
               height: screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index],
               decoration: BoxDecoration(
                 color: Colors.black,
@@ -420,11 +473,14 @@ class _HomePageState extends State<HomePage> {
               child: CameraContainer(
                 controller: _cameraController,
                 screenWidth: screenWidth,
+                // 6. 傳遞當前選中的比例
+                aspectRatio: aspectRatios[aspectRatios_index],
               ),
             ),
             SizedBox(
               height: (screenHeight -
-                  (screenWidth * 0.9 * 4 / 3) -
+                  // ⚠️ 注意：這裡的減法也必須使用當前的比例
+                  (screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index]) -
                   AppBar().preferredSize.height) /
                   8,
             ),
@@ -432,11 +488,11 @@ class _HomePageState extends State<HomePage> {
               width: screenWidth * 0.9,
               child: Column(
                 children: [
-                  // 原本 scale / zoom UI
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       InkWell(
+                        // 7. 修改：切換比例的邏輯 (增加到三個選項)
                         onTap: () {
                           setState(() {
                             aspectRatios_index =
@@ -450,7 +506,8 @@ class _HomePageState extends State<HomePage> {
                                 style: TextStyle(
                                     color: Colors.white, fontSize: 18)),
                             Text(
-                              "${aspectRatiosText[aspectRatios_index]}",
+                              // 8. 顯示當前比例的文字
+                              aspectRatiosText[aspectRatios_index],
                               style: const TextStyle(
                                   color: Colors.white, fontSize: 20),
                             ),
@@ -502,15 +559,17 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-
+// 9. 修改 CameraContainer：接受並使用傳入的 aspectRatio
 class CameraContainer extends StatelessWidget {
   final CameraController controller;
   final double screenWidth;
+  final double aspectRatio; // 新增：傳入的目標比例
 
   const CameraContainer({
     super.key,
     required this.controller,
     required this.screenWidth,
+    required this.aspectRatio, // 必須的參數
   });
 
   @override
@@ -520,10 +579,10 @@ class CameraContainer extends StatelessWidget {
     }
 
     final previewSize = controller.value.previewSize!;
-    final previewAspectRatio = previewSize.height / previewSize.width;
+    // final previewAspectRatio = previewSize.height / previewSize.width;
 
-    final targetAspect = aspectRatios[aspectRatios_index];
-    final targetHeight = screenWidth * 1 / targetAspect;
+    // final targetAspect = aspectRatios[aspectRatios_index]; // 從參數獲取
+    final targetHeight = screenWidth * 1 / aspectRatio;
 
     return Container(
       width: screenWidth,
@@ -573,7 +632,15 @@ class _RenameBoxState extends State<RenameBox>
   @override
   void initState() {
     super.initState();
-    fileName = widget.filePath.split('/').last;
+    // ⚠️ 修正：在 initState 中從 filePath 解析 fileName
+    // 預設的 filePath 結尾會是 millisecondsSinceEpoch.png，但顯示的應是 img
+    // 在 _onCapturePressed 之後，這裡應該取得正確的預設檔名
+    final pathParts = widget.filePath.split('/');
+    String tempFileName = pathParts.last;
+    if (tempFileName.endsWith(".png")) {
+      tempFileName = tempFileName.substring(0, tempFileName.length - 4);
+    }
+    fileName = tempFileName;
 
     _controller = AnimationController(
       vsync: this,
@@ -611,7 +678,7 @@ class _RenameBoxState extends State<RenameBox>
                 controller: _classController,
                 style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
-                  labelText: '班級',
+                  labelText: '欄位1',
                   labelStyle: TextStyle(color: Colors.white54),
                   hintStyle: TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
@@ -628,7 +695,7 @@ class _RenameBoxState extends State<RenameBox>
                 keyboardType: TextInputType.number,
                 style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
-                  labelText: '座號',
+                  labelText: '欄位2',
                   labelStyle: TextStyle(color: Colors.white54),
                   hintStyle: TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
@@ -644,7 +711,7 @@ class _RenameBoxState extends State<RenameBox>
                 controller: _nameController,
                 style: const TextStyle(color: Colors.white),
                 decoration: const InputDecoration(
-                  labelText: '姓名',
+                  labelText: '欄位3',
                   labelStyle: TextStyle(color: Colors.white54),
                   hintStyle: TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
@@ -668,24 +735,26 @@ class _RenameBoxState extends State<RenameBox>
                 final n = _numberController.text.trim();
                 final name = _nameController.text.trim();
 
+                // 修正：如果三個欄位都空，則不更新檔名，維持時間戳
+                if (c.isEmpty && n.isEmpty && name.isEmpty) {
+                  Navigator.pop(ctx);
+                  return;
+                }
 
-                // if (c.isNotEmpty && n.isNotEmpty && name.isNotEmpty) {
-                //   final newName = "${c}_${n}_$name";
-                //   setState(() {
-                //     fileName = newName;
-                //   });
-                //   widget.onNameChanged(newName);
-                // } else {
-                //   ScaffoldMessenger.of(context).showSnackBar(
-                //     const SnackBar(content: Text('⚠️ 請填寫完整三個欄位')),
-                //   );
-                // }
-
+                // 修正：即使部分欄位為空，也使用下劃線連接
                 final newName = "${c}_${n}_$name";
+
+                // 移除連續的下劃線，並移除開頭和結尾的下劃線
+                final cleanName = newName.replaceAll(RegExp(r'_+'), '_').replaceAll(RegExp(r'^_|_$'), '');
+
+                // 如果清理後為空，則使用時間戳
+                final finalName = cleanName.isEmpty ?
+                DateTime.now().millisecondsSinceEpoch.toString() : cleanName;
+
                 setState(() {
-                  fileName = newName;
+                  fileName = finalName;
                 });
-                widget.onNameChanged(newName);
+                widget.onNameChanged(finalName);
 
                 Navigator.pop(ctx);
               },
@@ -713,13 +782,175 @@ class _RenameBoxState extends State<RenameBox>
             color: Colors.white24,
           ),
           child: Text(
-            fileName,
+            // ⚠️ 修正：如果是預設的時間戳，顯示 img
+            (fileName.length == 13 && int.tryParse(fileName) != null) ? "img" : fileName,
             style: const TextStyle(
               fontSize: 14,
               color: Colors.white54,
               fontWeight: FontWeight.w600,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ====================================================================
+// 10. 新增：設定頁面 (SettingsPage)
+// ====================================================================
+class SettingsPage extends StatefulWidget {
+  final String currentRatio;
+
+  const SettingsPage({super.key, required this.currentRatio});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late TextEditingController _widthController;
+  late TextEditingController _heightController;
+
+  String _errorText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // 將 currentRatio (e.g., "16:9") 分割並設定給控制器
+    final parts = widget.currentRatio.split(':');
+    final initialW = parts.length == 2 ? parts[0] : '1';
+    final initialH = parts.length == 2 ? parts[1] : '1';
+
+    _widthController = TextEditingController(text: initialW);
+    _heightController = TextEditingController(text: initialH);
+  }
+
+  @override
+  void dispose() {
+    _widthController.dispose();
+    _heightController.dispose();
+    super.dispose();
+  }
+
+  void _saveSettings() {
+    final wStr = _widthController.text.trim();
+    final hStr = _heightController.text.trim();
+
+    final w = int.tryParse(wStr);
+    final h = int.tryParse(hStr);
+
+    if (w == null || h == null || w <= 0 || h <= 0) {
+      setState(() {
+        _errorText = '寬度和高度必須為大於零的整數。';
+      });
+      return;
+    }
+
+    // 檢查最大值 (避免用戶輸入極大的數字導致計算錯誤或溢位)
+    if (w > 1000 || h > 1000) {
+      setState(() {
+        _errorText = '輸入值不應大於 1000。';
+      });
+      return;
+    }
+
+    setState(() {
+      _errorText = '';
+    });
+
+    final newRatioString = '$wStr:$hStr';
+    // 返回到 HomePage 並傳遞新的比例字串
+    Navigator.pop(context, newRatioString);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('設定'),
+        backgroundColor: setColorScheme.background,
+        iconTheme: const IconThemeData(color: Colors.white54),
+      ),
+      backgroundColor: setColorScheme.background,
+      body: Padding(
+        padding: const EdgeInsets.all(padding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '自訂裁切比例 (寬:高)',
+              style: TextStyle(fontSize: 18, color: Colors.white),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _widthController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: '高 (H)',
+                      labelStyle: TextStyle(color: Colors.white54),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white30),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.lightBlue),
+                      ),
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(':', style: TextStyle(color: Colors.white, fontSize: 24)),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _heightController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: '寬 (W)',
+                      labelStyle: TextStyle(color: Colors.white54),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white30),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.lightBlue),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (_errorText.isNotEmpty)
+              Text(
+                _errorText,
+                style: const TextStyle(color: Colors.red),
+              ),
+            const SizedBox(height: 30),
+            Center(
+              child: ElevatedButton(
+                onPressed: _saveSettings,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.lightBlue,
+                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                ),
+                child: const Text(
+                  '儲存比例',
+                  style: TextStyle(fontSize: 18, color: Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'ℹ️ 比例格式為 寬:高，例如 16:9 (橫式) 或 9:16 (直式)。',
+              style: TextStyle(color: Colors.white54),
+            ),
+          ],
         ),
       ),
     );
