@@ -17,6 +17,7 @@ int aspectRatios_index = 0;
 String customFolderPath = "/storage/emulated/0/DCIM/PixelChickCam";
 // 新增一個全域變數來儲存自訂比例的字串，用於顯示和載入
 String customRatioString = "1:1";
+bool autoRenameEnabled = false; // 新增開關的全域變數
 
 
 Uint8List? _previewImageBytes;
@@ -65,6 +66,7 @@ class _HomePageState extends State<HomePage> {
 
   late CameraController _cameraController;
   bool _isCameraInitialized = false;
+  final GlobalKey<_RenameBoxState> _renameBoxKey = GlobalKey<_RenameBoxState>();
 
   @override
   void initState() {
@@ -78,9 +80,16 @@ class _HomePageState extends State<HomePage> {
     await _loadCustomRatio();     // 載入自訂比例
     await _initCamera();          // 再啟動相機
     if (mounted) setState(() {}); // 重新繪製畫面
+    await _loadAutoRenameSetting(); // 新增這行
+
   }
 
-  // ✅ 載入記憶的資料夾路徑
+  Future<void> _loadAutoRenameSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    autoRenameEnabled = prefs.getBool('autoRename') ?? false;
+  }
+
+  // 載入記憶的資料夾路徑
   Future<void> _loadSavedFolderPath() async {
     final prefs = await SharedPreferences.getInstance();
     final savedPath = prefs.getString('customFolderPath');
@@ -116,7 +125,7 @@ class _HomePageState extends State<HomePage> {
   }
 
 
-  // ✅ 選擇資料夾 + 記憶
+  // 選擇資料夾 + 記憶
   Future<void> _pickFolder() async {
     String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
 
@@ -125,7 +134,7 @@ class _HomePageState extends State<HomePage> {
         customFolderPath = selectedDirectory;
       });
 
-      // ✅ 儲存至 SharedPreferences
+      // 儲存至 SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('customFolderPath', selectedDirectory);
 
@@ -154,21 +163,21 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // 📸 一、拍照函式：只負責拍照與裁切，回傳裁切後的 bytes
+  // 一、拍照函式：只負責拍照與裁切，回傳裁切後的 bytes
   Future<Uint8List?> _captureAndCropImage() async {
     if (!_cameraController.value.isInitialized) return null;
 
     await Permission.camera.request();
 
     try {
-      // 1️⃣ 拍照
+      // 1拍照
       final XFile file = await _cameraController.takePicture();
 
-      // 2️⃣ 讀取原圖 bytes
+      // 讀取原圖 bytes
       final bytes = await File(file.path).readAsBytes();
       final ui.Image original = await decodeImageFromList(bytes);
 
-      // 3️⃣ 設定裁切比例
+      // ️設定裁切比例
       final double targetAspect = aspectRatios[aspectRatios_index];
       double srcW = original.width.toDouble();
       double srcH = original.height.toDouble();
@@ -183,7 +192,7 @@ class _HomePageState extends State<HomePage> {
       final left = (srcW - newW) / 2;
       final top = (srcH - newH) / 2;
 
-      // 4️⃣ 建立畫布裁切並水平翻轉
+      // 4建立畫布裁切並水平翻轉
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
       final paint = ui.Paint();
@@ -207,7 +216,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-// 💾 二、儲存函式：負責把 bytes 寫入指定資料夾
+// 二、儲存函式：負責把 bytes 寫入指定資料夾
   Future<String?> _saveImage(Uint8List bytes) async {
     await Permission.storage.request();
     await Permission.photos.request();
@@ -228,20 +237,121 @@ class _HomePageState extends State<HomePage> {
       return null;
     }
   }
+  Future<void> _showRenameDialog(BuildContext context) async {
+    final TextEditingController c1 = TextEditingController();
+    final TextEditingController c2 = TextEditingController();
+    final TextEditingController c3 = TextEditingController();
 
-  // 📸 三、整合：按下拍照按鈕執行
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.black87,
+          title: const Text('設定檔案名稱', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: c1,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: '欄位1',
+                  labelStyle: TextStyle(color: Colors.white54),
+                  enabledBorder:
+                  UnderlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
+                  focusedBorder:
+                  UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: c2,
+                style: const TextStyle(color: Colors.white),
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '欄位2',
+                  labelStyle: TextStyle(color: Colors.white54),
+                  enabledBorder:
+                  UnderlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
+                  focusedBorder:
+                  UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: c3,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  labelText: '欄位3',
+                  labelStyle: TextStyle(color: Colors.white54),
+                  enabledBorder:
+                  UnderlineInputBorder(borderSide: BorderSide(color: Colors.white30)),
+                  focusedBorder:
+                  UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () {
+                final c = c1.text.trim();
+                final n = c2.text.trim();
+                final name = c3.text.trim();
+                final newName = "${c}_${n}_$name"
+                    .replaceAll(RegExp(r'_+'), '_')
+                    .replaceAll(RegExp(r'^_|_$'), '');
+                final finalName = newName.isEmpty
+                    ? DateTime.now().millisecondsSinceEpoch.toString()
+                    : newName;
+
+                setState(() {
+                  fileName = finalName;
+                  filePath = "$savePath/$finalName.png";
+                });
+
+                //通知 RenameBox 更新顯示文字
+                _renameBoxKey.currentState?.setState(() {
+                  _renameBoxKey.currentState!.fileName = finalName;
+                });
+
+                Navigator.pop(ctx);
+              },
+              child: const Text('確定', style: TextStyle(color: Colors.lightBlue)),
+            ),
+
+
+          ],
+        );
+      },
+    );
+  }
+
+// 📸 三、整合：按下拍照按鈕執行
   Future<void> _onCapturePressed() async {
     final croppedBytes = await _captureAndCropImage();
     if (croppedBytes == null) return;
 
-    savePath = customFolderPath ?? "/storage/emulated/0/DCIM/PixelChickCam";
+    savePath = customFolderPath;
     filePath = "$savePath/${DateTime.now().millisecondsSinceEpoch}.png";
 
     setState(() {
       _previewImageBytes = croppedBytes;
-      _showPreview = true; // 顯示預覽畫面
+      _showPreview = true;
     });
+
+    //若開啟自動命名功能，就直接呼叫命名對話框
+    if (autoRenameEnabled && mounted) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      await _showRenameDialog(context);
+    }
   }
+
+
 
   // 3. 移除 _showNotReadyDialog 並改為導航到設定頁面
   void _openSettings() async {
@@ -285,11 +395,11 @@ class _HomePageState extends State<HomePage> {
       mainAxisAlignment: MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // ✅ 預覽圖片
+        //預覽圖片
         SizedBox(height: padding / 2),
         Container(
           width: screenWidth * 0.9,
-          // ⚠️ 注意：此處要用 aspectRatios[aspectRatios_index]，因為它可能不是 4/3
+          // 注意：此處要用 aspectRatios[aspectRatios_index]，因為它可能不是 4/3
           height: screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index],
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(25),
@@ -302,21 +412,23 @@ class _HomePageState extends State<HomePage> {
         ),
         SizedBox(
           height: (screenHeight -
-              // ⚠️ 注意：這裡的減法也必須使用當前的比例
+              // 注意：這裡的減法也必須使用當前的比例
               (screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index]) -
               AppBar().preferredSize.height) /
               8,
         ),
         //filename
         RenameBox(
+          key: _renameBoxKey, // ✅ 加上 key
           filePath: filePath,
           onNameChanged: (newName) {
             setState(() {
               fileName = newName;
-              filePath = "$savePath/$newName.png"; // ✅ 同步全域
+              filePath = "$savePath/$newName.png";
             });
           },
         ),
+
 
         SizedBox(
           height: padding * 1.5,
@@ -341,7 +453,7 @@ class _HomePageState extends State<HomePage> {
             IconButton(
               onPressed: () async {
                 if (_previewImageBytes == null) return;
-                // ⚠️ 注意：這裡的 fileName 應使用全域變數 fileName
+                // 注意：這裡的 fileName 應使用全域變數 fileName
                 final savePath = customFolderPath ?? "/storage/emulated/0/DCIM/PixelChickCam";
                 filePath = "$savePath/$fileName.png";
 
@@ -463,7 +575,7 @@ class _HomePageState extends State<HomePage> {
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               width: screenWidth * 0.9,
-              // ⚠️ 注意：這裡的 height 必須使用當前選中的比例
+              // 注意：這裡的 height 必須使用當前選中的比例
               height: screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index],
               decoration: BoxDecoration(
                 color: Colors.black,
@@ -479,7 +591,7 @@ class _HomePageState extends State<HomePage> {
             ),
             SizedBox(
               height: (screenHeight -
-                  // ⚠️ 注意：這裡的減法也必須使用當前的比例
+                  // 注意：這裡的減法也必須使用當前的比例
                   (screenWidth * 0.9 * 1 / aspectRatios[aspectRatios_index]) -
                   AppBar().preferredSize.height) /
                   8,
@@ -632,7 +744,7 @@ class _RenameBoxState extends State<RenameBox>
   @override
   void initState() {
     super.initState();
-    // ⚠️ 修正：在 initState 中從 filePath 解析 fileName
+    //  修正：在 initState 中從 filePath 解析 fileName
     // 預設的 filePath 結尾會是 millisecondsSinceEpoch.png，但顯示的應是 img
     // 在 _onCapturePressed 之後，這裡應該取得正確的預設檔名
     final pathParts = widget.filePath.split('/');
@@ -877,7 +989,22 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.all(padding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
+            SwitchListTile(
+              title: const Text('每次拍攝後自動詢問檔案名稱', style: TextStyle(color: Colors.white)),
+              value: autoRenameEnabled,
+              activeColor: Colors.lightBlue,
+              onChanged: (value) async {
+                setState(() {
+                  autoRenameEnabled = value;
+                });
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('autoRename', value);
+              },
+            ),
+            const SizedBox(height: 30),
+
             const Text(
               '自訂裁切比例 (寬:高)',
               style: TextStyle(fontSize: 18, color: Colors.white),
@@ -947,7 +1074,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: 20),
             const Text(
-              'ℹ️ 比例格式為 寬:高，例如 16:9 (橫式) 或 9:16 (直式)。',
+              'ℹ比例格式為 寬:高，例如 16:9 (橫式) 或 9:16 (直式)。',
               style: TextStyle(color: Colors.white54),
             ),
           ],
