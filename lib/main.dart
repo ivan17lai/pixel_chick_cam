@@ -13,7 +13,7 @@ const padding = 20.0;
 // 預設比例：4:3, 5:4, 1:1 (自訂預設)
 List<double> aspectRatios = [3/4, 4/5, 1.0];
 List<String> aspectRatiosText = ["4:3","5:4", "1:1"];
-int aspectRatios_index = 0;
+int aspectRatios_index = 1;
 String customFolderPath = "/storage/emulated/0/DCIM/PixelChickCam";
 // 新增一個全域變數來儲存自訂比例的字串，用於顯示和載入
 String customRatioString = "1:1";
@@ -344,11 +344,6 @@ class _HomePageState extends State<HomePage> {
       _showPreview = true;
     });
 
-    //若開啟自動命名功能，就直接呼叫命名對話框
-    if (autoRenameEnabled && mounted) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      await _showRenameDialog(context);
-    }
   }
 
 
@@ -452,6 +447,11 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(width: 20),
             IconButton(
               onPressed: () async {
+                //若開啟自動命名功能，就直接呼叫命名對話框
+                if (autoRenameEnabled && mounted) {
+                  await Future.delayed(const Duration(milliseconds: 200));
+                  await _showRenameDialog(context);
+                }
                 if (_previewImageBytes == null) return;
                 // 注意：這裡的 fileName 應使用全域變數 fileName
                 final savePath = customFolderPath ?? "/storage/emulated/0/DCIM/PixelChickCam";
@@ -894,7 +894,6 @@ class _RenameBoxState extends State<RenameBox>
             color: Colors.white24,
           ),
           child: Text(
-            // ⚠️ 修正：如果是預設的時間戳，顯示 img
             (fileName.length == 13 && int.tryParse(fileName) != null) ? "img" : fileName,
             style: const TextStyle(
               fontSize: 14,
