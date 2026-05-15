@@ -9,3 +9,5 @@
 - 支援自訂寬高比例
 - 三欄位組合命名，方便批量照片管理
 - 可指定儲存資料夾路徑
+
+<img width="1480" height="2800" alt="Screenshot_2026-05-16-02-10-43-870_com pixelChickCam pixel_chick_cam-portrait" src="https://github.com/user-attachments/assets/329043c1-b3af-4c91-b516-3214cc8149b7" />
